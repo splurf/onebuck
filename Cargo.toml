@@ -7,7 +7,7 @@ repository = "https://github.com/splurf/onebuck"
 authors = ["Evan Schwartzentruber <evandotschwartzentruber@gmail.com>"]
 description = "An efficient unordered dynamically-sized data structure."
 keywords = ["efficient", "fast", "lightweight", "unordered", "dynamic"]
-categories = ["Data structures"]
+categories = ["data-structures"]
 exclude = [".github/", ".gitignore", "LICENSE", "README.md"]
 
 [features]
