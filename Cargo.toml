@@ -2,6 +2,17 @@
 name = "onebuck"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/splurf/onebuck"
+authors = ["Evan Schwartzentruber <evandotschwartzentruber@gmail.com>"]
+description = "An efficient unordered dynamically-sized data structure."
+keywords = ["efficient", "fast", "lightweight", "unordered", "dynamic"]
+categories = ["Data structures"]
+exclude = [".github/", ".gitignore", "LICENSE", "README.md"]
+
+[features]
+default = ["get"]
+get = []
 
 [profile.release]
 lto = true

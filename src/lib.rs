@@ -88,6 +88,7 @@ impl<T> Bucket<T> {
     ///
     /// # Arguments
     /// * `index` - The `ValueIndex` of the value to retrieve.
+    #[cfg(feature = "get")]
     pub fn get(&self, index: &ValueIndex) -> &T {
         &self.data[index.0.load(Ordering::Relaxed)].data
     }
