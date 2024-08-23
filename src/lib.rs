@@ -1,6 +1,8 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    fmt::Debug,
+    ops::Deref,
+    rc::Rc,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 /// Manages the capacity of a dynamic data structure.
@@ -37,12 +39,39 @@ impl Capacity {
 /// `ValueIndex` is used to uniquely identify a position in the data structure.
 /// It provides access to elements stored in a `Bucket`.
 #[derive(Debug)]
-pub struct ValueIndex(Arc<AtomicUsize>);
+pub struct ValueIndex(Rc<AtomicUsize>);
 
-#[derive(Debug)]
-struct Value<T> {
+pub struct Value<T> {
     data: T,
-    index: Arc<AtomicUsize>,
+    index: Rc<AtomicUsize>,
+}
+
+#[cfg(feature = "clone")]
+impl Clone for ValueIndex {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+#[cfg(feature = "clone")]
+impl<T> Value<T> {
+    pub fn index(&self) -> ValueIndex {
+        ValueIndex(self.index.clone())
+    }
+}
+
+impl<T> Deref for Value<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T: Debug> Debug for Value<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self.data))
+    }
 }
 
 /// A dynamic array-like data structure that supports efficient insertion, removal, and capacity management.
@@ -79,7 +108,14 @@ impl<T> Bucket<T> {
         self.data.is_empty()
     }
 
+    /// Returns an iterator over the values in the `Bucket`.
+    #[cfg(feature = "clone")]
+    pub fn iter(&self) -> impl Iterator<Item = &Value<T>> {
+        self.data.iter()
+    }
+
     /// Returns an iterator over the elements in the `Bucket`.
+    #[cfg(not(feature = "clone"))]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.data.iter().map(|v| &v.data)
     }
@@ -104,7 +140,7 @@ impl<T> Bucket<T> {
             self.grow()
         }
         let index = self.data.len();
-        let index_shared = Arc::new(AtomicUsize::new(index));
+        let index_shared = Rc::new(AtomicUsize::new(index));
 
         self.data.push(Value {
             data,
@@ -120,8 +156,25 @@ impl<T> Bucket<T> {
     ///
     /// # Arguments
     /// * `index` - The `ValueIndex` of the value to remove.
+    #[cfg(not(feature = "clone"))]
     pub fn remove(&mut self, index: ValueIndex) -> T {
-        let i = index.0.load(Ordering::Relaxed);
+        let index = index.0.load(Ordering::Relaxed);
+        self._remove(index)
+    }
+
+    /// Removes the value at the specified index, if it exists.
+    ///
+    /// The slot is freed for future use, and the internal array may be compacted.
+    ///
+    /// # Arguments
+    /// * `index` - The `ValueIndex` of the value to remove.
+    #[cfg(feature = "clone")]
+    pub fn remove(&mut self, index: ValueIndex) -> Option<T> {
+        let index = index.0.load(Ordering::Relaxed);
+        self.data.get(index).is_some().then(|| self._remove(index))
+    }
+
+    fn _remove(&mut self, i: usize) -> T {
         let j = self.len() - 1;
 
         if self.len() > 1 && i < j {
@@ -201,7 +254,13 @@ mod tests {
         let mut bucket = Bucket::new(2);
         let idx = bucket.insert(42);
         let value = bucket.remove(idx);
+
+        #[cfg(not(feature = "clone"))]
         assert_eq!(value, 42);
+
+        #[cfg(feature = "clone")]
+        assert_eq!(value, Some(42));
+
         assert!(bucket.is_empty());
     }
 
@@ -233,6 +292,7 @@ mod tests {
         assert!(bucket.is_empty());
     }
 
+    #[cfg(not(feature = "clone"))]
     #[test]
     #[should_panic]
     fn test_remove_empty() {
@@ -241,6 +301,16 @@ mod tests {
         let idx_clone = ValueIndex(idx.0.clone());
         bucket.remove(idx);
         bucket.remove(idx_clone); // Should panic as index is invalid
+    }
+
+    #[cfg(feature = "clone")]
+    #[test]
+    fn test_remove_empty() {
+        let mut bucket = Bucket::new(1);
+        let idx = bucket.insert(1);
+        let idx_clone = ValueIndex(idx.0.clone());
+        bucket.remove(idx);
+        assert_eq!(bucket.remove(idx_clone), None)
     }
 
     #[test]
@@ -266,7 +336,13 @@ mod tests {
         let idx1 = bucket.insert(1);
         _ = bucket.insert(2);
         bucket.remove(idx1);
+
+        #[cfg(not(feature = "clone"))]
         let values: Vec<_> = bucket.iter().cloned().collect();
+
+        #[cfg(feature = "clone")]
+        let values: Vec<_> = bucket.iter().map(|v| v.data).collect();
+
         assert_eq!(values, vec![2]);
     }
 
