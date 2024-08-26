@@ -18,5 +18,5 @@ An efficient unordered dynamically-sized data structure.
 
 ## Features
 - `atomic` - uses `std::sync::Arc` instead of the default `std::rc::Rc` for thread safety.
-- `clone` - allows `ValueIndex`'s to be cloneable, allowing for greater versatility.
-- `get` (**default**) - Obtain reference from bucket at indexed position.
+- `clone` - allows `ValueIndex` to be cloneable, allowing for greater versatility.
+- `get` (**default**) - Obtain a reference from the bucket at the indexed position.

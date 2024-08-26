@@ -1,3 +1,5 @@
+#![allow(clippy::from_over_into)]
+
 use std::{
     fmt::Debug,
     ops::{Deref, DerefMut},
@@ -5,10 +7,124 @@ use std::{
 };
 
 #[cfg(not(feature = "atomic"))]
-type Index = std::rc::Rc<AtomicUsize>;
+pub type Index = std::rc::Rc<AtomicUsize>;
 
 #[cfg(feature = "atomic")]
-type Index = std::sync::Arc<AtomicUsize>;
+pub type Index = std::sync::Arc<AtomicUsize>;
+
+/// Represents an index in a data structure.
+///
+/// `ValueIndex` is used to identify a position in the data structure uniquely.
+/// It provides access to elements stored in a `Bucket`.
+#[derive(Debug)]
+pub struct ValueIndex(pub(crate) Index);
+
+#[cfg(feature = "clone")]
+impl Clone for ValueIndex {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl Into<Index> for ValueIndex {
+    /// Converts a `ValueIndex` into its underlying `Index`.
+    fn into(self) -> Index {
+        self.0
+    }
+}
+
+/// Represents a value stored in the `Bucket` data structure.
+///
+/// `Value` holds both the actual data and the index pointing to its position
+/// in the `Bucket`. It provides `Deref` and `DerefMut` implementations to
+/// access the underlying data directly.
+pub struct Value<T> {
+    data: T,
+    index: Index,
+}
+
+impl<'a, T> Into<ValueRef<'a, T>> for &'a Value<T> {
+    /// Converts a reference to `Value` into a `ValueRef` for borrowed access.
+    fn into(self) -> ValueRef<'a, T> {
+        ValueRef {
+            data: &self.data,
+            index: &self.index,
+        }
+    }
+}
+
+#[cfg(feature = "clone")]
+impl<T> Into<Index> for Value<T> {
+    /// Converts a `Value` into its underlying `Index`.
+    fn into(self) -> Index {
+        self.index
+    }
+}
+
+impl<T> Deref for Value<T> {
+    type Target = T;
+
+    /// Provides immutable access to the underlying data.
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T> DerefMut for Value<T> {
+    /// Provides mutable access to the underlying data.
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl<T: Debug> Debug for Value<T> {
+    /// Formats the value for debugging purposes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self.data))
+    }
+}
+
+/// A reference type for borrowed access to a `Value` within a `Bucket`.
+///
+/// `ValueRef` is used to provide access to both the data and the index
+/// associated with a `Value` without transferring ownership.
+pub struct ValueRef<'a, T> {
+    data: &'a T,
+
+    #[allow(dead_code)]
+    index: &'a Index,
+}
+
+#[cfg(feature = "clone")]
+impl<'a, T> Into<ValueIndex> for ValueRef<'a, T> {
+    /// Converts a `ValueRef` into a `ValueIndex` for indexing operations.
+    fn into(self) -> ValueIndex {
+        ValueIndex(self.index.clone())
+    }
+}
+
+impl<'a, T> Deref for ValueRef<'a, T> {
+    type Target = &'a T;
+
+    /// Provides immutable access to the referenced data.
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<'a, T> DerefMut for ValueRef<'a, T> {
+    /// Provides mutable access to the referenced data.
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl<'a, T: Debug> Debug for ValueRef<'a, T> {
+    /// Formats the referenced value for debugging purposes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{:?}", self.data))
+    }
+}
 
 /// Manages the capacity of a dynamic data structure.
 ///
@@ -21,6 +137,9 @@ struct Capacity {
 
 impl Capacity {
     /// Creates a new `Capacity` with the given initial size.
+    ///
+    /// # Arguments
+    /// * `original` - The initial capacity of the data structure.
     const fn new(original: usize) -> Self {
         Self {
             original,
@@ -39,53 +158,11 @@ impl Capacity {
     }
 }
 
-/// Represents an index in a data structure.
-///
-/// `ValueIndex` is used to uniquely identify a position in the data structure.
-/// It provides access to elements stored in a `Bucket`.
-#[derive(Debug)]
-pub struct ValueIndex(Index);
-
-pub struct Value<T> {
-    data: T,
-    index: Index,
-}
-
-#[cfg(feature = "clone")]
-impl Clone for ValueIndex {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-#[cfg(feature = "clone")]
-impl<T> Value<T> {
-    pub fn index(&self) -> ValueIndex {
-        ValueIndex(self.index.clone())
-    }
-}
-
-impl<T> Deref for Value<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl<T> DerefMut for Value<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
-    }
-}
-
-impl<T: Debug> Debug for Value<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{:?}", self.data))
-    }
-}
-
 /// A dynamic array-like data structure that supports efficient insertion, removal, and capacity management.
+///
+/// `Bucket` is designed to manage elements dynamically with efficient allocation
+/// and deallocation of space. It automatically adjusts its capacity based on the
+/// number of elements.
 #[derive(Debug)]
 pub struct Bucket<T> {
     data: Vec<Value<T>>,
@@ -96,7 +173,7 @@ impl<T> Bucket<T> {
     /// Creates a new `Bucket` with the specified initial capacity.
     ///
     /// # Arguments
-    /// * `capacity` - The initial number of slots available in the `Bucket`.
+    /// * `capacity` - The initial number of slots in the `Bucket`.
     pub fn new(capacity: usize) -> Self {
         Self {
             data: Vec::with_capacity(capacity),
@@ -121,8 +198,8 @@ impl<T> Bucket<T> {
 
     /// Returns an iterator over the values in the `Bucket`.
     #[cfg(feature = "clone")]
-    pub fn iter(&self) -> impl Iterator<Item = &Value<T>> {
-        self.data.iter()
+    pub fn iter(&self) -> impl Iterator<Item = ValueRef<'_, T>> {
+        self.data.iter().map(Into::into)
     }
 
     /// Returns an iterator over the elements in the `Bucket`.
@@ -147,11 +224,12 @@ impl<T> Bucket<T> {
     /// # Arguments
     /// * `data` - The value to insert.
     pub fn insert(&mut self, data: T) -> ValueIndex {
-        if self.len() == self.capacity.current {
-            self.grow()
+        let n = self.len();
+
+        if n == self.capacity() {
+            self.grow();
         }
-        let index = self.data.len();
-        let index_shared = Index::new(AtomicUsize::new(index));
+        let index_shared = Index::new(AtomicUsize::new(n));
 
         self.data.push(Value {
             data,
@@ -168,8 +246,8 @@ impl<T> Bucket<T> {
     /// # Arguments
     /// * `index` - The `ValueIndex` of the value to remove.
     #[cfg(not(feature = "clone"))]
-    pub fn remove(&mut self, index: ValueIndex) -> T {
-        let index = index.0.load(Ordering::Relaxed);
+    pub fn remove(&mut self, index: impl Into<Index>) -> T {
+        let index = index.into().load(Ordering::Relaxed);
         self._remove(index)
     }
 
@@ -180,8 +258,8 @@ impl<T> Bucket<T> {
     /// # Arguments
     /// * `index` - The `ValueIndex` of the value to remove.
     #[cfg(feature = "clone")]
-    pub fn remove(&mut self, index: ValueIndex) -> Option<T> {
-        let index = index.0.load(Ordering::Relaxed);
+    pub fn remove(&mut self, index: impl Into<Index>) -> Option<T> {
+        let index = index.into().load(Ordering::Relaxed);
         self.data.get(index).is_some().then(|| self._remove(index))
     }
 
@@ -221,20 +299,21 @@ impl<T> Bucket<T> {
     /// This method is called internally when the `Bucket` is full.
     fn grow(&mut self) {
         self.capacity.grow();
-        self.data.reserve(self.capacity.original)
+        self.data.reserve(self.capacity.original);
     }
 
-    /// Reduces the capacity of the `Bucket`.
+    /// Decreases the capacity of the `Bucket`.
     ///
-    /// This method is called internally when elements are removed.
+    /// This method is called internally when the `Bucket` has extra capacity
+    /// after removing elements.
     fn shrink(&mut self) {
         self.capacity.shrink();
-        self.data.shrink_to(self.capacity.current)
+        self.data.shrink_to(self.capacity.current);
     }
 }
 
 impl<T> Default for Bucket<T> {
-    /// Creates a `Bucket` with a default capacity of `32`.
+    /// Creates an empty `Bucket` with a default initial capacity.
     fn default() -> Self {
         Self::new(32)
     }
@@ -252,6 +331,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "get")]
     fn test_insert() {
         let mut bucket = Bucket::new(2);
         let idx1 = bucket.insert(42);
@@ -295,6 +375,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "get")]
     fn test_edge_cases() {
         let mut bucket = Bucket::new(1);
         let idx = bucket.insert(10);
@@ -349,15 +430,16 @@ mod tests {
         bucket.remove(idx1);
 
         #[cfg(not(feature = "clone"))]
-        let values: Vec<_> = bucket.iter().cloned().collect();
+        let values: Vec<_> = bucket.iter().collect();
 
         #[cfg(feature = "clone")]
         let values: Vec<_> = bucket.iter().map(|v| v.data).collect();
 
-        assert_eq!(values, vec![2]);
+        assert_eq!(values, vec![&2]);
     }
 
     #[test]
+    #[cfg(feature = "get")]
     fn test_repeated_inserts_removals() {
         let mut bucket = Bucket::new(3);
         for i in 0..5 {
