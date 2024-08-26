@@ -1,9 +1,14 @@
 use std::{
     fmt::Debug,
     ops::Deref,
-    rc::Rc,
     sync::atomic::{AtomicUsize, Ordering},
 };
+
+#[cfg(not(feature = "atomic"))]
+type Index = std::rc::Rc<AtomicUsize>;
+
+#[cfg(feature = "atomic")]
+type Index = std::sync::Arc<AtomicUsize>;
 
 /// Manages the capacity of a dynamic data structure.
 ///
@@ -39,11 +44,11 @@ impl Capacity {
 /// `ValueIndex` is used to uniquely identify a position in the data structure.
 /// It provides access to elements stored in a `Bucket`.
 #[derive(Debug)]
-pub struct ValueIndex(Rc<AtomicUsize>);
+pub struct ValueIndex(Index);
 
 pub struct Value<T> {
     data: T,
-    index: Rc<AtomicUsize>,
+    index: Index,
 }
 
 #[cfg(feature = "clone")]
@@ -140,7 +145,7 @@ impl<T> Bucket<T> {
             self.grow()
         }
         let index = self.data.len();
-        let index_shared = Rc::new(AtomicUsize::new(index));
+        let index_shared = Index::new(AtomicUsize::new(index));
 
         self.data.push(Value {
             data,
