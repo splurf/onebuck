@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -70,6 +70,12 @@ impl<T> Deref for Value<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.data
+    }
+}
+
+impl<T> DerefMut for Value<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
     }
 }
 
